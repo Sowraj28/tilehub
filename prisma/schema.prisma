@@ -1,0 +1,84 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Admin {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  password  String
+  role      String   @default("SUPER_ADMIN")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model SubAdmin {
+  id          String   @id @default(cuid())
+  username    String   @unique
+  passKey     String
+  displayName String
+  isActive    Boolean  @default(true)
+  createdBy   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  exports     Export[]
+}
+
+model Tile {
+  id          String   @id @default(cuid())
+  name        String
+  sku         String   @unique
+  category    String
+  size        String
+  finish      String
+  color       String
+  thickness   String
+  pricePerBox Float
+  stockQty    Int      @default(0)
+  minStock    Int      @default(10)
+  qrCode      String?  @db.Text
+  imageUrl    String?  @db.Text    // ← ADD THIS LINE
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  stockLogs   StockLog[]
+  exportItems ExportItem[]
+}
+model StockLog {
+  id        String   @id @default(cuid())
+  tileId    String
+  tile      Tile     @relation(fields: [tileId], references: [id], onDelete: Cascade)
+  type      String
+  quantity  Int
+  note      String?
+  doneBy    String
+  createdAt DateTime @default(now())
+}
+
+model Export {
+  id          String       @id @default(cuid())
+  subAdminId  String
+  subAdmin    SubAdmin     @relation(fields: [subAdminId], references: [id])
+  totalBoxes  Int
+  totalValue  Float
+  note        String?
+  createdAt   DateTime     @default(now())
+
+  items       ExportItem[]
+}
+
+model ExportItem {
+  id       String @id @default(cuid())
+  exportId String
+  export   Export @relation(fields: [exportId], references: [id], onDelete: Cascade)
+  tileId   String
+  tile     Tile   @relation(fields: [tileId], references: [id])
+  quantity Int
+  price    Float
+}
