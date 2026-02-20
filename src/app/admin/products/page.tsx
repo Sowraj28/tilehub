@@ -1441,21 +1441,22 @@ export default function ProductsPage() {
               </div>
             )}
             <div
-              className="bg-brand-black rounded-xl p-5 border-2 border-brand-purple/40"
-              style={{ boxShadow: "0 0 20px rgba(124,58,237,0.2)" }}
-            >
-              {selected.qrCode ? (
-                <img
-                  src={selected.qrCode}
-                  alt={`QR — ${selected.sku}`}
-                  className="w-56 h-56 rounded"
-                />
-              ) : (
-                <div className="w-56 h-56 flex items-center justify-center text-brand-muted text-sm">
-                  No QR Code yet
-                </div>
-              )}
-            </div>
+                className="rounded-xl p-4 border-2 border-gray-200"
+                style={{ background: "#ffffff", boxShadow: "0 2px 16px rgba(0,0,0,0.10)" }}
+              >
+                {selected.qrCode ? (
+                  <img
+                    src={selected.qrCode}
+                    alt={`QR — ${selected.sku}`}
+                    className="w-56 h-56 rounded"
+                    style={{ display: "block" }}
+                  />
+                ) : (
+                  <div className="w-56 h-56 flex items-center justify-center text-gray-400 text-sm">
+                    No QR Code yet
+                  </div>
+                )}
+              </div>
             <div className="text-center">
               <p className="font-bold text-brand-text text-lg">
                 {selected.name}

@@ -214,14 +214,18 @@ export default function SubAdminDashboard() {
           ? { label: "Low Stock", color: "#eab308" }
           : { label: "In Stock", color: "#22c55e" };
 
-    // To this:
     const thickness = tile.thickness ?? "N/A";
 
+    // White-background QR in PDF so it never merges with dark backgrounds
     const qrSection = tile.qrCode
-      ? `<div class="qr-box"><img src="${tile.qrCode}" alt="QR Code" class="qr-img" /><p class="qr-label">Scan to identify product</p></div>`
+      ? `<div class="qr-box">
+           <div style="background:#ffffff;padding:10px;border-radius:8px;display:inline-block;border:1px solid #e5e7eb;">
+             <img src="${tile.qrCode}" alt="QR Code" class="qr-img" />
+           </div>
+           <p class="qr-label">Scan to identify product</p>
+         </div>`
       : `<div class="qr-box no-qr"><p>No QR Code</p></div>`;
 
-    // For URL images, use directly; for base64, embed inline
     const tileImageSection = tile.imageUrl
       ? `<div class="tile-img-section">
           <div class="spec-section-title" style="margin-bottom:10px">Tile Image</div>
@@ -272,10 +276,11 @@ export default function SubAdminDashboard() {
     .spec-item { background: #f9f9f9; border: 1px solid #eee; border-radius: 8px; padding: 10px 12px; }
     .spec-label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; }
     .spec-value { font-size: 14px; font-weight: 600; color: #111; }
-    .qr-box { width: 165px; flex-shrink: 0; border: 2px solid #e9d5ff; border-radius: 14px; padding: 12px; text-align: center; background: #faf5ff; }
-    .qr-img { width: 137px; height: 137px; border-radius: 6px; }
+    /* QR box — white background so it's always scannable when printed */
+    .qr-box { width: 185px; flex-shrink: 0; border: 2px solid #e5e7eb; border-radius: 14px; padding: 12px; text-align: center; background: #ffffff; }
+    .qr-img { width: 137px; height: 137px; border-radius: 4px; display: block; margin: 0 auto; }
     .qr-label { font-size: 10px; color: #888; margin-top: 8px; }
-    .no-qr { width: 165px; height: 165px; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #aaa; }
+    .no-qr { width: 185px; height: 185px; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #aaa; }
     .desc-box { background: #f9f9f9; border: 1px solid #eee; border-radius: 8px; padding: 12px 16px; margin-bottom: 22px; }
     .desc-box p { font-size: 13px; color: #444; line-height: 1.6; }
     .footer { border-top: 1px solid #eee; padding-top: 14px; display: flex; justify-content: space-between; align-items: center; }
@@ -363,7 +368,7 @@ export default function SubAdminDashboard() {
     win.document.write(html);
     win.document.close();
     setExportingId(null);
-  };;
+  };
 
   return (
     <div className="space-y-6">
@@ -479,7 +484,6 @@ export default function SubAdminDashboard() {
                   <th className="table-header">Color</th>
                   <th className="table-header">Price/Box</th>
                   <th className="table-header">Stock</th>
-                  <th className="table-header">Status</th>
                   <th className="table-header">QR</th>
                   <th className="table-header">PDF</th>
                 </tr>
@@ -517,15 +521,6 @@ export default function SubAdminDashboard() {
                       <span className="text-brand-muted text-xs ml-1">
                         boxes
                       </span>
-                    </td>
-                    <td className="table-cell">
-                      {t.stockQty === 0 ? (
-                        <span className="badge-red">Out</span>
-                      ) : t.stockQty <= t.minStock ? (
-                        <span className="badge-yellow">Low</span>
-                      ) : (
-                        <span className="badge-green">OK</span>
-                      )}
                     </td>
                     <td className="table-cell">
                       {t.qrCode ? (
@@ -610,7 +605,6 @@ export default function SubAdminDashboard() {
             {filtered.map((t) => (
               <div key={t.id} className="glass-card p-4">
                 <div className="flex items-start gap-3 mb-2">
-                  {/* Mobile uses larger 14x14 thumb */}
                   {t.imageUrl ? (
                     <button
                       type="button"
@@ -644,29 +638,12 @@ export default function SubAdminDashboard() {
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between">
-                      <div className="min-w-0">
-                        <p className="font-semibold text-brand-text text-sm truncate">
-                          {t.name}
-                        </p>
-                        <code className="text-xs text-brand-purple-light font-mono">
-                          {t.sku}
-                        </code>
-                      </div>
-                      {t.stockQty === 0 ? (
-                        <span className="badge-red text-xs shrink-0 ml-2">
-                          Out
-                        </span>
-                      ) : t.stockQty <= t.minStock ? (
-                        <span className="badge-yellow text-xs shrink-0 ml-2">
-                          Low
-                        </span>
-                      ) : (
-                        <span className="badge-green text-xs shrink-0 ml-2">
-                          OK
-                        </span>
-                      )}
-                    </div>
+                    <p className="font-semibold text-brand-text text-sm truncate">
+                      {t.name}
+                    </p>
+                    <code className="text-xs text-brand-purple-light font-mono">
+                      {t.sku}
+                    </code>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-1 text-xs mt-1">
@@ -834,16 +811,23 @@ export default function SubAdminDashboard() {
                   />
                 </div>
               )}
+
+              {/* WHITE background for QR so it's always scannable */}
               <div
-                className="bg-brand-black rounded-xl p-5 border-2 border-brand-purple/40"
-                style={{ boxShadow: "0 0 20px rgba(124,58,237,0.2)" }}
+                className="rounded-xl p-4 border-2 border-gray-200"
+                style={{
+                  background: "#ffffff",
+                  boxShadow: "0 2px 16px rgba(0,0,0,0.10)",
+                }}
               >
                 <img
                   src={qrTile.qrCode!}
                   alt={`QR — ${qrTile.sku}`}
                   className="w-56 h-56 rounded"
+                  style={{ display: "block" }}
                 />
               </div>
+
               <div className="text-center">
                 <p className="font-bold text-brand-text text-lg">
                   {qrTile.name}
@@ -862,6 +846,7 @@ export default function SubAdminDashboard() {
                   </span>
                 </div>
               </div>
+
               <div className="w-full bg-brand-black-4 rounded-lg p-3 text-xs border border-brand-border">
                 <p className="text-brand-muted font-semibold mb-1.5 uppercase tracking-wide">
                   QR Contains
@@ -883,6 +868,7 @@ export default function SubAdminDashboard() {
                   <p>• Price: {formatCurrency(qrTile.pricePerBox)}/box</p>
                 </div>
               </div>
+
               <div className="flex gap-3 w-full">
                 <button
                   onClick={() => downloadQR(qrTile)}

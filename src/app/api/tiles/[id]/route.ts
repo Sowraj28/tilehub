@@ -1,3 +1,4 @@
+// app/api/tiles/[id]/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { generateQRCode } from "@/lib/utils";
@@ -59,7 +60,7 @@ export async function PUT(
       pricePerBox,
       minStock,
       description,
-      imageUrl, // ← NEW
+      imageUrl,
     } = body;
 
     const existing = await prisma.tile.findUnique({ where: { id: params.id } });
@@ -80,8 +81,6 @@ export async function PUT(
       ? parseFloat(pricePerBox)
       : existing.pricePerBox;
 
-    // imageUrl: if explicitly passed (even empty string to clear), use it;
-    // if key not present in body at all, keep existing value.
     const updatedImageUrl = Object.prototype.hasOwnProperty.call(
       body,
       "imageUrl",
@@ -89,6 +88,7 @@ export async function PUT(
       ? imageUrl || null
       : existing.imageUrl;
 
+    // Regenerate QR with standard black-on-white colors
     const qrData = JSON.stringify({
       sku: existing.sku,
       name: updatedName,
@@ -115,7 +115,7 @@ export async function PUT(
         qrCode,
         description:
           description !== undefined ? description : existing.description,
-        imageUrl: updatedImageUrl, // ← NEW
+        imageUrl: updatedImageUrl,
       },
     });
 

@@ -1,6 +1,7 @@
+// app/api/tiles/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { generateQRCode, generateSKU } from "@/lib/utils";
+import { generateQRCode } from "@/lib/utils";
 import { getTokenFromRequest } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
@@ -21,8 +22,7 @@ export async function GET(req: NextRequest) {
     });
 
     return NextResponse.json({ success: true, data: tiles });
-  } catch (error) {
-    console.error("Fetch tiles error:", error);
+  } catch {
     return NextResponse.json(
       { success: false, error: "Failed to fetch tiles" },
       { status: 500 },
@@ -47,34 +47,26 @@ export async function POST(req: NextRequest) {
       size,
       finish,
       color,
-      thickness,
+      thickness = "10mm",
       pricePerBox,
-      stockQty,
-      minStock,
+      stockQty = 0,
+      minStock = 10,
       description,
-      imageUrl, // ← NEW
+      imageUrl,
     } = body;
 
-    if (
-      !name ||
-      !category ||
-      !size ||
-      !finish ||
-      !color ||
-      !thickness ||
-      !pricePerBox
-    ) {
+    if (!name || !category || !size || !finish || !color || !pricePerBox) {
       return NextResponse.json(
-        {
-          success: false,
-          error:
-            "Required fields: name, category, size, finish, color, thickness, pricePerBox",
-        },
+        { success: false, error: "Missing required fields" },
         { status: 400 },
       );
     }
 
-    const sku = generateSKU(name, category);
+    // Generate unique SKU
+    const prefix = category.substring(0, 3).toUpperCase();
+    const timestamp = Date.now().toString().slice(-6);
+    const sku = `${prefix}-${timestamp}`;
+
     const qrData = JSON.stringify({
       sku,
       name,
@@ -85,12 +77,14 @@ export async function POST(req: NextRequest) {
       thickness,
       pricePerBox: parseFloat(pricePerBox),
     });
+
+    // Generate standard black-on-white QR code
     const qrCode = await generateQRCode(qrData);
 
     const tile = await prisma.tile.create({
       data: {
-        name,
         sku,
+        name,
         category,
         size,
         finish,
@@ -99,23 +93,22 @@ export async function POST(req: NextRequest) {
         pricePerBox: parseFloat(pricePerBox),
         stockQty: parseInt(stockQty) || 0,
         minStock: parseInt(minStock) || 10,
-        qrCode,
         description: description || null,
-        imageUrl: imageUrl || null, // ← NEW
+        imageUrl: imageUrl || null,
+        qrCode,
       },
     });
 
-    if (tile.stockQty > 0) {
-      await prisma.stockLog.create({
-        data: {
-          tileId: tile.id,
-          type: "ADD",
-          quantity: tile.stockQty,
-          note: "Initial stock on tile creation",
-          doneBy: user.username as string,
-        },
-      });
-    }
+    // If initial stock > 0, create a stock log
+  await prisma.stockLog.create({
+    data: {
+      tileId: tile.id,
+      type: "ADD",
+      quantity: parseInt(stockQty),
+      note: "Initial stock on tile creation",
+      doneBy: "admin",
+    },
+  });
 
     return NextResponse.json({ success: true, data: tile }, { status: 201 });
   } catch (error) {

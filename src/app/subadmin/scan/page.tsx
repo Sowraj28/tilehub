@@ -1,4 +1,6 @@
 "use client";
+
+import jsQR from "jsqr";
 import { useEffect, useRef, useState } from "react";
 import type { Tile } from "@/types";
 import { formatCurrency } from "@/lib/utils";
@@ -13,6 +15,8 @@ export default function ScanPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number>(0);
+  const scanningRef = useRef<boolean>(false);
+  const lastScanTime = useRef<number>(0); // throttle for mobile performance
 
   const [scanning, setScanning] = useState(false);
   const [scannedTile, setScannedTile] = useState<Tile | null>(null);
@@ -23,31 +27,9 @@ export default function ScanPage() {
   const [exportNote, setExportNote] = useState("");
   const [imgErrored, setImgErrored] = useState(false);
 
-  const startCamera = async () => {
-    setError("");
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: "environment",
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-        setScanning(true);
-        rafRef.current = requestAnimationFrame(scanFrame);
-      }
-    } catch (err) {
-      setError(
-        "Camera access denied. Please allow camera permissions and try again.",
-      );
-    }
-  };
-
+  // ── stopCamera ─────────────────────────────────────────────────────────────
   const stopCamera = () => {
+    scanningRef.current = false;
     cancelAnimationFrame(rafRef.current);
     streamRef.current?.getTracks().forEach((t) => t.stop());
     if (videoRef.current) videoRef.current.srcObject = null;
@@ -55,54 +37,159 @@ export default function ScanPage() {
     setScanning(false);
   };
 
-  const scanFrame = () => {
-    if (!videoRef.current || !canvasRef.current) return;
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
-    if (!ctx || video.readyState !== video.HAVE_ENOUGH_DATA) {
-      rafRef.current = requestAnimationFrame(scanFrame);
-      return;
-    }
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    ctx.drawImage(video, 0, 0);
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-
-    import("jsqr").then(({ default: jsQR }) => {
-      const code = jsQR(imageData.data, imageData.width, imageData.height, {
-        inversionAttempts: "dontInvert",
-      });
-      if (code?.data) {
-        stopCamera();
-        processQR(code.data);
-      } else {
-        rafRef.current = requestAnimationFrame(scanFrame);
-      }
-    });
-  };
-
+  // ── processQR — handles ALL possible QR formats ───────────────────────────
+  // Supports: plain SKU string, JSON {"sku":"..."}, JSON {"SKU":"..."},
+  // JSON with name/id/code keys, or any raw string treated as SKU directly
   const processQR = async (data: string) => {
     try {
-      const parsed = JSON.parse(data) as { sku: string };
-      if (!parsed.sku) {
-        setError("QR code does not contain valid tile data.");
+      let sku = "";
+
+      try {
+        const parsed = JSON.parse(data);
+        sku =
+          parsed.sku ||
+          parsed.SKU ||
+          parsed.Sku ||
+          parsed.skuCode ||
+          parsed.code ||
+          parsed.id ||
+          "";
+      } catch {
+        // Not JSON — use raw string as the SKU directly
+        sku = data.trim();
+      }
+
+      if (!sku) {
+        setError("Could not extract SKU from QR code. Raw: " + data);
         return;
       }
+
       const r = await fetch("/api/tiles");
       const d = await r.json();
       if (d.success) {
-        const tile = (d.data as Tile[]).find((t) => t.sku === parsed.sku);
+        const tiles = d.data as Tile[];
+        // Case-insensitive match for safety
+        const tile = tiles.find(
+          (t) => t.sku.toLowerCase() === sku.toLowerCase(),
+        );
         if (tile) {
           setScannedTile(tile);
-          setImgErrored(false); // reset image error state on new scan
+          setImgErrored(false);
           setError("");
         } else {
-          setError(`Tile with SKU "${parsed.sku}" not found in database.`);
+          setError(`Tile with SKU "${sku}" not found in database.`);
         }
+      } else {
+        setError("Failed to fetch tiles from server.");
       }
+    } catch (err) {
+      console.error("processQR error:", err);
+      setError("Error processing QR code. Please try again.");
+    }
+  };
+
+  // ── scanFrame — throttled every 200ms for mobile ───────────────────────────
+  const scanFrame = () => {
+    if (!scanningRef.current) return;
+
+    const now = Date.now();
+    if (now - lastScanTime.current < 200) {
+      rafRef.current = requestAnimationFrame(scanFrame);
+      return;
+    }
+    lastScanTime.current = now;
+
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) {
+      rafRef.current = requestAnimationFrame(scanFrame);
+      return;
+    }
+
+    // Wait for real video dimensions
+    if (
+      video.readyState !== video.HAVE_ENOUGH_DATA ||
+      video.videoWidth === 0 ||
+      video.videoHeight === 0
+    ) {
+      rafRef.current = requestAnimationFrame(scanFrame);
+      return;
+    }
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      rafRef.current = requestAnimationFrame(scanFrame);
+      return;
+    }
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    let imageData: ImageData;
+    try {
+      imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     } catch {
-      setError("Invalid QR code. Could not parse tile data.");
+      rafRef.current = requestAnimationFrame(scanFrame);
+      return;
+    }
+
+    // attemptBoth = try normal + inverted, catches more QR codes
+    const code = jsQR(imageData.data, imageData.width, imageData.height, {
+      inversionAttempts: "attemptBoth",
+    });
+
+    if (code?.data) {
+      stopCamera();
+      processQR(code.data);
+    } else {
+      rafRef.current = requestAnimationFrame(scanFrame);
+    }
+  };
+
+  // ── startCamera — with fallback for mobile compatibility ──────────────────
+  const startCamera = async () => {
+    setError("");
+    if (scanningRef.current) stopCamera();
+
+    try {
+      let stream: MediaStream;
+
+      try {
+        // Prefer rear camera on mobile
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+        });
+      } catch {
+        // Fallback: accept any camera
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      }
+
+      streamRef.current = stream;
+      const video = videoRef.current;
+      if (!video) return;
+
+      video.srcObject = stream;
+
+      // Wait for metadata before playing
+      await new Promise<void>((resolve) => {
+        video.onloadedmetadata = () => resolve();
+      });
+      await video.play();
+
+      scanningRef.current = true;
+      lastScanTime.current = 0;
+      setScanning(true);
+      rafRef.current = requestAnimationFrame(scanFrame);
+    } catch (err) {
+      console.error("Camera error:", err);
+      setError(
+        "Camera access denied or unavailable. Please allow camera permissions and try again.",
+      );
     }
   };
 
@@ -340,11 +427,13 @@ export default function ScanPage() {
         </h2>
         <div className="flex flex-col items-center gap-4">
           <div className="relative w-full max-w-sm aspect-video bg-brand-black rounded-xl overflow-hidden border-2 border-brand-border">
+            {/* autoPlay added for iOS Safari compatibility */}
             <video
               ref={videoRef}
               className="w-full h-full object-cover"
               playsInline
               muted
+              autoPlay
             />
             {scanning && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -448,7 +537,6 @@ export default function ScanPage() {
             </button>
           </div>
 
-          {/* ── TILE IMAGE (NEW) ── */}
           {scannedTile.imageUrl && !imgErrored && (
             <div
               className="mb-5 rounded-xl overflow-hidden border-2 border-brand-purple/30 bg-brand-black"
@@ -464,7 +552,6 @@ export default function ScanPage() {
             </div>
           )}
 
-          {/* No image placeholder */}
           {(!scannedTile.imageUrl || imgErrored) && (
             <div
               className="mb-5 rounded-xl border-2 border-dashed border-brand-border bg-brand-black-4 flex items-center justify-center"
@@ -487,7 +574,6 @@ export default function ScanPage() {
             </div>
           )}
 
-          {/* Tile details grid */}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-5">
             {[
               { l: "Name", v: scannedTile.name },
@@ -512,7 +598,6 @@ export default function ScanPage() {
             ))}
           </div>
 
-          {/* Stock status badge */}
           <div className="mb-4">
             {scannedTile.stockQty === 0 ? (
               <span className="badge-red">Out of Stock</span>
@@ -580,7 +665,6 @@ export default function ScanPage() {
                 key={c.tile.id}
                 className="px-5 py-3 flex items-center gap-3 sm:gap-4"
               >
-                {/* Cart item thumbnail */}
                 <div className="shrink-0">
                   {c.tile.imageUrl ? (
                     <img
@@ -607,7 +691,6 @@ export default function ScanPage() {
                     </div>
                   )}
                 </div>
-
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-brand-text text-sm truncate">
                     {c.tile.name}
@@ -688,14 +771,12 @@ export default function ScanPage() {
                 </p>
               </div>
             </div>
-
             <input
               value={exportNote}
               onChange={(e) => setExportNote(e.target.value)}
               placeholder="Add a note (optional, e.g. Project name)..."
               className="input-field"
             />
-
             <button
               onClick={handleExport}
               disabled={exporting || cart.length === 0}
