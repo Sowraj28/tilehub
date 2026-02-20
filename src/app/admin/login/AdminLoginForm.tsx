@@ -22,9 +22,9 @@ export default function AdminLogin() {
       const data = await res.json();
 
       if (data.success) {
-        // Small delay to ensure cookie is set
+        // Use replace so the login page is removed from browser history
         setTimeout(() => {
-          window.location.href = "/admin/dashboard";
+          window.location.replace("/admin/dashboard");
         }, 100);
       } else {
         setError(data.error || "Login failed");

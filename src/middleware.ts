@@ -27,9 +27,21 @@ function isTokenValid(token: string): boolean {
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  if (pathname.startsWith("/admin") && !pathname.startsWith("/admin/login")) {
+  // ── Admin routes ──────────────────────────────────────────────
+  if (pathname.startsWith("/admin")) {
     const token = request.cookies.get("admin_token")?.value;
-    if (!token || !isTokenValid(token)) {
+    const valid = token ? isTokenValid(token) : false;
+
+    // Already authenticated → block access to login page, send to dashboard
+    if (pathname.startsWith("/admin/login")) {
+      if (valid) {
+        return NextResponse.redirect(new URL("/admin/dashboard", request.url));
+      }
+      return NextResponse.next();
+    }
+
+    // Protected admin pages → require valid token
+    if (!valid) {
       const response = NextResponse.redirect(
         new URL("/admin/login", request.url),
       );
@@ -38,12 +50,23 @@ export function middleware(request: NextRequest) {
     }
   }
 
-  if (
-    pathname.startsWith("/subadmin") &&
-    !pathname.startsWith("/subadmin/login")
-  ) {
+  // ── Sub-Admin routes ──────────────────────────────────────────
+  if (pathname.startsWith("/subadmin")) {
     const token = request.cookies.get("subadmin_token")?.value;
-    if (!token || !isTokenValid(token)) {
+    const valid = token ? isTokenValid(token) : false;
+
+    // Already authenticated → block access to login page, send to dashboard
+    if (pathname.startsWith("/subadmin/login")) {
+      if (valid) {
+        return NextResponse.redirect(
+          new URL("/subadmin/dashboard", request.url),
+        );
+      }
+      return NextResponse.next();
+    }
+
+    // Protected sub-admin pages → require valid token
+    if (!valid) {
       const response = NextResponse.redirect(
         new URL("/subadmin/login", request.url),
       );

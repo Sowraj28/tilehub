@@ -22,8 +22,9 @@ export default function SubAdminLogin() {
       const d = await r.json();
 
       if (d.success) {
+        // Use replace so the login page is removed from browser history
         setTimeout(() => {
-          window.location.href = "/subadmin/dashboard";
+          window.location.replace("/subadmin/dashboard");
         }, 100);
       } else {
         setError(d.error || "Login failed");
